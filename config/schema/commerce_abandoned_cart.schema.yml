@@ -1,0 +1,10 @@
+commerce_abandoned_cart.settings:
+  type: mapping
+  label: 'Abandoned cart settings'
+  mapping:
+    email_message_id:
+      type: string
+      label: 'The ID of the email message config to use'
+    age:
+      type: integer
+      label: 'The number of days the order needs to be untouched before firing the email notification'

@@ -1,0 +1,6 @@
+commerce_abandoned_cart.settings:
+  title: Abandoned cart settings
+  description: Configure the abandoned cart functionality
+  route_name: commerce_abandoned_cart.settings
+  parent: 'commerce_order.configuration'
+  weight: 10

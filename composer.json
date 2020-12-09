@@ -1,0 +1,17 @@
+{
+    "name": "drupal/commerce_abandoned_cart",
+    "type": "drupal-module",
+    "description": "Sends emails to the user to encourage them to restart their cart",
+    "license": "GPL-2.0+",
+    "require": {
+        "drupal/commerce": "^2.17",
+        "drupal/email_messages": "dev-master"
+    },
+    "minimum-stability": "dev",
+    "repositories": [
+        {
+            "type": "git",
+            "url": "https://github.com/upchuk/email_messages.git"
+        }
+    ]
+}

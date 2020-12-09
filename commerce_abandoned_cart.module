@@ -1,0 +1,91 @@
+<?php
+
+use Drupal\commerce_order\Entity\Order;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Url;
+use Drupal\email_messages\Entity\EmailMessage;
+
+/**
+ * Implements hook_entity_base_field_info().
+ */
+function commerce_abandoned_cart_entity_base_field_info(EntityTypeInterface $entity_type) {
+  $fields = [];
+
+  if ($entity_type->id() == 'commerce_order') {
+    $fields['abandoned_cart_notified'] = BaseFieldDefinition::create('integer')
+      ->setLabel(t('Notification times'))
+      ->setTranslatable(FALSE)
+      ->setDescription(t('The number of times the customer was notified of an abandoned cart'));
+  }
+
+  return $fields;
+}
+
+/**
+ * Implements hook_cron().
+ */
+function commerce_abandoned_cart_cron() {
+  $config = \Drupal::config('commerce_abandoned_cart.settings');
+  $email_message_id = $config->get('email_message_id');
+  if (!EmailMessage::load($email_message_id)) {
+    return;
+  }
+
+  $time = \Drupal::time()->getRequestTime();
+  // The cart age in seconds
+  $cart_age = $config->get('age') * 24 * 60 * 60;
+
+  $query = \Drupal::entityTypeManager()->getStorage('commerce_order')->getQuery();
+  $group = $query->orConditionGroup()
+    ->notExists('abandoned_cart_notified')
+    ->condition('abandoned_cart_notified', 1, '<');
+
+  $ids = $query
+    ->condition('cart', 1)
+    ->condition('state', 'draft')
+    ->condition($group)
+    ->condition('changed', $time - $cart_age, '<=')
+    ->accessCheck(FALSE)
+    ->execute();
+
+  if (!$ids) {
+    return;
+  }
+
+  /** @var \Drupal\commerce_order\Entity\OrderInterface[] $orders */
+  $orders = Order::loadMultiple($ids);
+
+  /** @var \Drupal\email_messages\EmailMessageManager $email_manager */
+  $email_manager = \Drupal::service('email_messages.manager');
+  $mailed_orders = [];
+  foreach ($orders as $order) {
+    $customer = $order->getCustomer();
+    if (!$customer->getEmail()) {
+      // The user can be anonymous without an email address.
+      continue;
+    }
+
+    $url_language = \Drupal::languageManager()->getLanguage($customer->getPreferredLangcode());
+    $replace = [
+      '@cart' => Url::fromRoute('commerce_checkout.form', ['step' => 'order_information', 'commerce_order' => $order->id()], ['language' => $url_language])->toString(),
+    ];
+    $message = $email_manager->getMessage($email_message_id, $replace, $customer->getPreferredLangcode());
+    $result = $email_manager->mailMessage($message, $customer->getEmail());
+    if ($result['result']) {
+      $mailed_orders[] = $order->id();
+      // Update the order to not send this email again.
+      $updates = $order->get('abandoned_cart_notified')->value;
+      if (!$updates) {
+        $updates = 0;
+      }
+      $updates++;
+      $order->set('abandoned_cart_notified', $updates);
+      $order->save();
+    }
+  }
+
+  if ($mailed_orders) {
+    \Drupal::logger('commerce_abandoned_cart')->info('The following orders were sent an abandoned cart notification: @orders', ['@orders' => implode(', ', $mailed_orders)]);
+  }
+}
